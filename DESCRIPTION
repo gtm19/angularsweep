@@ -1,0 +1,23 @@
+Package: angularsweep
+Title: Contains Tools to Identify the Maximum Number of Points Within a Circle of Given Radius
+    in 2D Space
+Version: 0.0.0.9000
+Authors@R: 
+    person(given = "Gareth",
+           family = "Maddock",
+           role = c("aut", "cre"),
+           email = "gtmaddock@gmail.com")
+Description: `angularsweep` contains functions which implement the angular sweep algorithm in order
+    to determine the circle with specified radius which contains the maximum number of a provided set of
+    points in two dimensional space. It can also do the same with a weighting variable: giving the circle
+    with the weighted maximum number of points within it. This could be used, for example, to identify the 
+    circle containing the largest aggregate value of a number of buildings, given their values.
+License: GPL-3
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.1.0
+Suggests: 
+    remotes,
+    spelling
+Language: en-GB
