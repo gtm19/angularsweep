@@ -30,3 +30,5 @@ Depends:
 Imports: 
     sf,
     geosphere
+URL: https://github.com/gtm19/angularsweep
+BugReports: https://github.com/gtm19/angularsweep/issues
