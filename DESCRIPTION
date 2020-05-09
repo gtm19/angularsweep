@@ -19,5 +19,14 @@ Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.1.0
 Suggests: 
     remotes,
-    spelling
+    spelling,
+    testthat,
+    httr,
+    jsonlite,
+    janitor
 Language: en-GB
+Depends: 
+    R (>= 2.10)
+Imports: 
+    sf,
+    geosphere
