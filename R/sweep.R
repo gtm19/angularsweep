@@ -1,15 +1,6 @@
-#' Perform the angular sweep algorithm on a data frame of coordinates
+#' Perform the angular sweep algorithm on a data frame of points
 #'
-#' @param df the data frame containing coordinates
-#' @inheritParams change_projection
-#' @param weight name of column containing data with which to weight the points
-#' @param radius the radius of the circle to sweep with (in metres)
-#' @param inc_data logical. Whether or not to include the original data alongside
-#'     the indices of the points included in each circle
-#'
-#' @importFrom stats setNames
-#' @importFrom geosphere distm
-#' @importFrom utils flush.console setTxtProgressBar txtProgressBar
+#' @inheritParams sweep_
 #'
 #' @return a data frame
 #' @export
@@ -20,95 +11,153 @@ sweep_points <- function(df,
                          radius,
                          inc_data = FALSE) {
 
+  fun <- sweep_(df, xcol, ycol, weight, radius, inc_data)
+
+  # for cartesian points, the distance function does not need to be geodesic, and no reprojection required
+  fun(dist_fun = dist_matrix, crs_transform = FALSE)
+
+}
+
+
+#' Perform the angular sweep algorithm on a data frame of coordinates
+#'
+#' @param lon the name of the column containing the longitude coordinate
+#' @param lat the name of the column containing the latitude coordinate
+#'
+#' @inheritParams sweep_
+#'
+#' @importFrom geosphere distm
+#'
+#' @return a data frame
+#' @export
+sweep_latlons <- function(df,
+                          lon,
+                          lat,
+                          weight = NULL,
+                          radius,
+                          inc_data = FALSE) {
+
+  warning(
+    paste("This function is experimental! Proceed with caution.",
+          "I am still trying to determine the best way to reproject",
+          "the points for accurate measures of distance between them", sep = "\n")
+  )
+
+  xcol <- lon
+  ycol <- lat
+
+  fun <- sweep_(df, xcol, ycol, weight, radius, inc_data)
+
+  # for latlons, the distance function needs to be geodesic, and coordinates need to be re-projected
+  fun(dist_fun = geosphere::distm, crs_transform = TRUE)
+
+}
+
+#' Create a basic sweep function
+#'
+#' @param df the data frame containing coordinates
+#' @param xcol the name of the column containing the x coordinate
+#' @param ycol the name of the column containing the y coordinate
+#' @param weight name of column containing data with which to weight the points
+#' @param radius the radius of the circle to sweep with (in metres)
+#' @param inc_data logical. Whether or not to include the original data alongside
+#'     the indices of the points included in each circle
+#'
+#' @importFrom stats setNames
+#' @importFrom utils flush.console setTxtProgressBar txtProgressBar
+#'
+#' @return a function with two arguments
+#' \describe{
+#'   \item{dist_fun}{The function to use to calculate distance between points}
+#'   \item{crs_transform}{Whether or not xcol and ycol are latlons, and need to be transformed to coordinate projection}
+#' }
+sweep_ <- function(df,
+                   xcol,
+                   ycol,
+                   weight = NULL,
+                   radius,
+                   inc_data = FALSE) {
+
   pre_sweep_check(df, xcol, ycol, weight, radius, inc_data)
 
-  # Add weight in if null
-  if(is.null(weight)){
-    weight <- "weight"
-    df[[weight]] <- rep(1, length.out = nrow(df))
-  }
+  function(dist_fun, crs_transform){
 
-  # add ID to df and capture raw DF before manipulating further
-  df$id <- seq_along(df[[1]])
-  df_raw <- df
+    # Add weight in if null
+    if(is.null(weight)){
+      weight <- "weight"
+      df[[weight]] <- rep(1, length.out = nrow(df))
+    }
 
-  # keep only columns we'll need from df
-  df <- df[c("id", xcol, ycol, weight)]
+    # add ID to df and capture raw DF before manipulating further
+    df$id <- seq_along(df[[1]])
+    df_raw <- df
 
-  # add suffix to df_raw xcol and ycol
-  names(df_raw)[names(df_raw) %in% c(xcol, ycol)] <-
-    paste0(names(df_raw)[names(df_raw) %in% c(xcol, ycol)], "_loc")
+    # keep only columns we'll need from df
+    df <- df[c("id", xcol, ycol, weight)]
 
-  # Create Distance Matrix --------------------------------------------------
+    # add suffix to df_raw xcol and ycol
+    names(df_raw)[names(df_raw) %in% c(xcol, ycol)] <-
+      paste0(names(df_raw)[names(df_raw) %in% c(xcol, ycol)], "_loc")
 
-  message("Computing distance matrix")
-  flush.console()
+    # Create Distance Matrix --------------------------------------------------
 
-  dist <-
-    geosphere::distm(df[c(xcol, ycol)])
+    message("Computing distance matrix")
+    flush.console()
 
-  message("Distance matrix...done")
-  flush.console()
+    dist <-
+      dist_fun(df[c(xcol, ycol)])
 
-  # Separate lonely points: those with no other points within 1 diameter
-  over_1_index <- rowSums(dist <= 2*radius) > 1
+    message("Distance matrix...done")
+    flush.console()
 
-  if(sum(over_1_index) == 0) {
-    stop("No circles of specified radius contain more than 1 point -- nothing to aggregate")
-  }
+    # Separate lonely points: those with no other points within 1 diameter
+    over_1_index <- rowSums(dist <= 2*radius) > 1
 
-  lonely_points <- df[!over_1_index, ]
+    if(sum(over_1_index) == 0) {
+      stop("No circles of specified radius contain more than 1 point -- nothing to aggregate")
+    }
 
-  names(lonely_points)[names(lonely_points) == "id"] <- "in_circle"
-  names(lonely_points)[names(lonely_points) == weight] <- "total"
-  class(lonely_points[["in_circle"]]) <- "list"
+    lonely_points <- df[!over_1_index, ]
 
-  df <- df[over_1_index, ]
+    names(lonely_points)[names(lonely_points) == "id"] <- "in_circle"
+    names(lonely_points)[names(lonely_points) == weight] <- "total"
+    class(lonely_points[["in_circle"]]) <- "list"
 
-  # Prep for point by point sweeping
-  # Progress bar initialisation
-  total_points_to_check <- cumsum(rowSums(dist <= 2*radius))
-  pb <- txtProgressBar(min = 0, max = max(total_points_to_check), style = 3)
+    df <- df[over_1_index, ]
 
-  # Create empty results list to populate
-  results <- vector(mode = "list", length = length(df$id))
+    # Prep for point by point sweeping
+    # Progress bar initialisation
+    total_points_to_check <- cumsum(rowSums(dist <= 2*radius))
+    pb <- txtProgressBar(min = 0, max = max(total_points_to_check), style = 3)
 
-  for(i in df$id) {
+    # Create empty results list to populate
+    results <- vector(mode = "list", length = length(df$id))
 
-    # create index of nearby points
-    nearby_index <-
-      which(dist[i, ] <= 2*radius & dist[i, ] > 0)
+    for(i in df$id) {
 
-    # create df of nearby points
-    nearby_data <-
-      df[df$id %in% nearby_index, ]
+      # create index of nearby points
+      nearby_index <-
+        which(dist[i, ] <= 2*radius & dist[i, ] > 0)
 
-    # create df of specific point
-    same_point_index <-
-      which(dist[i, ] == 0)
+      # create df of nearby points
+      nearby_data <-
+        df[df$id %in% nearby_index, ]
 
-    point_data <-
-      df[df$id %in% same_point_index, ]
+      # create df of specific point
+      same_point_index <-
+        which(dist[i, ] == 0)
 
-    # change CRS projection
-    utm_crs <- lonlat_to_utm(unlist(point_data[point_data$id == i, ][c(xcol, ycol)]))
+      point_data <-
+        df[df$id %in% same_point_index, ]
 
-    point_data <- change_projection(point_data, xcol, ycol, 4326, utm_crs)
-    nearby_data <- change_projection(nearby_data, xcol, ycol, 4326, utm_crs)
+      # change CRS projection
+      if(crs_transform) {
+        utm_crs <- lonlat_to_utm(unlist(point_data[point_data$id == i, ][c(xcol, ycol)]))
 
-    if(length(nearby_index) == 0) {
-      circles <-
-        data.frame(
-          x = unique(point_data[[xcol]]),
-          y = unique(point_data[[ycol]]),
-          in_circle = list(same_point_index)
-        )
+        point_data <- change_projection(point_data, xcol, ycol, 4326, utm_crs)
+        nearby_data <- change_projection(nearby_data, xcol, ycol, 4326, utm_crs)
+      }
 
-      names(circles)[names(circles) == "x"] <- xcol
-      names(circles)[names(circles) == "y"] <- ycol
-      class(circles$in_circle) <- "list"
-
-    } else {
       # add thetas in and out of nearby dataset
       A <- big_a(point_data[[xcol]][1], point_data[[ycol]][1], nearby_data[[xcol]], nearby_data[[ycol]])
       B <- big_b(radius, dist[i, nearby_index])
@@ -129,10 +178,10 @@ sweep_points <- function(df,
       # initial circle
       # identify ids which entered earlier and have not exited yet
       in_circle[[1]] <-
-        c(nearby_data$id[
+        sort( c(nearby_data$id[
           which(normalise_angle(all_thetas$theta[1] - nearby_data$theta_in) >= 0 &
                   normalise_angle(all_thetas$theta[1] - nearby_data$theta_out) <= 0)
-          ], point_data$id)  # includes all points in point_data
+          ], point_data$id) ) # includes all points in point_data
 
       # if first theta is a theta_out remove it from the initial
       if(!all_thetas$in_[1]) {
@@ -164,44 +213,45 @@ sweep_points <- function(df,
 
       circles$in_circle <-
         in_circle
+
+      circles$total <-
+        sapply(circles$in_circle, function(ids) {
+          sum(df[[weight]][df$id %in% ids])
+        })
+
+      if(crs_transform) {
+        circles <- change_projection(circles, xcol, ycol, utm_crs, 4326)
+      }
+
+      setTxtProgressBar(pb, total_points_to_check[match(i, df$id)])
+
+      results[[match(i, df$id)]] <- circles
     }
 
-    circles$total <-
-      sapply(circles$in_circle, function(ids) {
-        sum(df[[weight]][df$id %in% ids])
-      })
-
-    circles <- change_projection(circles, xcol, ycol, utm_crs, 4326)
-
-    setTxtProgressBar(pb, total_points_to_check[match(i, df$id)])
-
-    results[[match(i, df$id)]] <- circles
-  }
-
-  results <-
-    do.call(rbind, results)
-
-  if(exists("lonely_points")) {
     results <-
-      rbind(results, lonely_points)
+      do.call(rbind, results)
+
+    if(exists("lonely_points")) {
+      results <-
+        rbind(results, lonely_points)
+    }
+
+    results <- results[order(-results$total), ]
+
+    if(inc_data) {
+      results$data <- lapply(results$in_circle, function(ids){
+        df_raw[df_raw$id %in% ids, ]
+      })
+    }
+
+    unique_results_index <-
+      (!duplicated(results$in_circle)) & results$total > 0
+
+    results <-
+      results[unique_results_index, ]
+
+    rownames(results) <- NULL
+
+    return(results)
   }
-
-  results <- results[order(-results$total), ]
-
-  if(inc_data) {
-    results$data <- lapply(results$in_circle, function(ids){
-      df_raw[df_raw$id %in% ids, ]
-    })
-  }
-
-  unique_results_index <-
-    (!duplicated(results$in_circle)) & results$total > 0
-
-  results <-
-    results[unique_results_index, ]
-
-  rownames(results) <- NULL
-
-  return(results)
-
 }

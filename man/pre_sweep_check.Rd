@@ -2,16 +2,16 @@
 % Please edit documentation in R/utils.R
 \name{pre_sweep_check}
 \alias{pre_sweep_check}
-\title{Function to check \link{sweep_points} arguments are valid before proceeding}
+\title{Function to check \link{sweep_latlons} arguments are valid before proceeding}
 \usage{
 pre_sweep_check(df, xcol, ycol, weight, radius, inc_data)
 }
 \arguments{
 \item{df}{the data frame containing coordinates}
 
-\item{xcol}{the name of the column containing the longitude coordinate}
+\item{xcol}{the name of the column containing the x coordinate}
 
-\item{ycol}{the name of the column containing the latitude coordinate}
+\item{ycol}{the name of the column containing the y coordinate}
 
 \item{weight}{name of column containing data with which to weight the points}
 
@@ -24,5 +24,5 @@ the indices of the points included in each circle}
 NULL, if all conditions are met
 }
 \description{
-Function to check \link{sweep_points} arguments are valid before proceeding
+Function to check \link{sweep_latlons} arguments are valid before proceeding
 }

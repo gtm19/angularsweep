@@ -1,6 +1,6 @@
-#' Function to check \link{sweep_points} arguments are valid before proceeding
+#' Function to check \link{sweep_latlons} arguments are valid before proceeding
 #'
-#' @inheritParams sweep_points
+#' @inheritParams sweep_
 #'
 #' @return NULL, if all conditions are met
 pre_sweep_check <- function(df, xcol, ycol, weight, radius, inc_data) {
@@ -15,5 +15,18 @@ pre_sweep_check <- function(df, xcol, ycol, weight, radius, inc_data) {
     "radius must be greater than zero" = radius > 0,
     "inc_data must be a logical atomic vector" = is.logical(inc_data) && length(inc_data) == 1
   )
+}
 
+#' Calculate distance matrix for \eqn{n} given points
+#'
+#' @inheritParams stats::dist
+#'
+#' @importFrom stats dist
+#'
+#' @return an \eqn{n \times n} distance matrix
+dist_matrix <- function(x) {
+
+  as.matrix(
+    dist(x, diag = TRUE, upper = TRUE)
+  )
 }
