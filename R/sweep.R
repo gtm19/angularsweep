@@ -158,66 +158,81 @@ sweep_ <- function(df,
         nearby_data <- change_projection(nearby_data, xcol, ycol, 4326, utm_crs)
       }
 
-      # add thetas in and out of nearby dataset
-      A <- big_a(point_data[[xcol]][1], point_data[[ycol]][1], nearby_data[[xcol]], nearby_data[[ycol]])
-      B <- big_b(radius, dist[i, nearby_index])
+      if(nrow(nearby_data) == 0) {
 
-      nearby_data$theta_in <- normalise_angle(A - B)
-      nearby_data$theta_out <- normalise_angle(A + B)
+        circle <- point_data[1, c(xcol, ycol)]
 
-      # creat df of all thetas
-      all_thetas <-
-        data.frame(theta = unlist(nearby_data[c("theta_in", "theta_out")], use.names = FALSE),
-                   id = rep(nearby_data$id, 2),
-                   in_ = c(rep(TRUE, nrow(nearby_data)), rep(FALSE, nrow(nearby_data))))
+        circle$in_circle <- list(point_data[["id"]])
 
-      in_circle <- vector(mode = "list", length = 2*nrow(nearby_data))
+        circle$total <- sum(point_data[[weight]])
 
-      all_thetas <- all_thetas[order(all_thetas$theta), ]
+        rownames(circle) <- NULL
+      } else {
 
-      # initial circle
-      # identify ids which entered earlier and have not exited yet
-      in_circle[[1]] <-
-        sort( c(nearby_data$id[
-          which(normalise_angle(all_thetas$theta[1] - nearby_data$theta_in) >= 0 &
-                  normalise_angle(all_thetas$theta[1] - nearby_data$theta_out) <= 0)
+        # add thetas in and out of nearby dataset
+        A <- big_a(point_data[[xcol]][1], point_data[[ycol]][1], nearby_data[[xcol]], nearby_data[[ycol]])
+        B <- big_b(radius, dist[i, nearby_index])
+
+        nearby_data$theta_in <- normalise_angle(A - B)
+        nearby_data$theta_out <- normalise_angle(A + B)
+
+        # creat df of all thetas
+        all_thetas <-
+          data.frame(theta = unlist(nearby_data[c("theta_in", "theta_out")], use.names = FALSE),
+                     id = rep(nearby_data$id, 2),
+                     in_ = c(rep(TRUE, nrow(nearby_data)), rep(FALSE, nrow(nearby_data))))
+
+        in_circle <- vector(mode = "list", length = 2*nrow(nearby_data))
+
+        all_thetas <- all_thetas[order(all_thetas$theta), ]
+
+        # initial circle
+        # identify ids which entered earlier and have not exited yet
+        in_circle[[1]] <-
+          sort( c(nearby_data$id[
+            which(normalise_angle(all_thetas$theta[1] - nearby_data$theta_in) >= 0 &
+                    normalise_angle(all_thetas$theta[1] - nearby_data$theta_out) <= 0)
           ], point_data$id) ) # includes all points in point_data
 
-      # if first theta is a theta_out remove it from the initial
-      if(!all_thetas$in_[1]) {
-        in_circle[[1]] <-
-          sort( setdiff(in_circle[[1]], all_thetas$id[1]) )
-      }
+        # if first theta is a theta_out remove it from the initial
+        # browser(expr = {is.na(all_thetas$in_[1])})
 
-      # for the rest of the rows, simply add the theta_in dots and remove
-      # the theta_out ones
-      for(j in 2:nrow(all_thetas)) {
-        if(all_thetas$in_[j]) {
-          in_circle[[j]] <-
-            sort( c(in_circle[[j-1]], all_thetas$id[j]) )
-        } else {
-          in_circle[[j]] <-
-            sort( setdiff(in_circle[[j-1]], all_thetas$id[j]) )
+        if(!all_thetas$in_[1]) {
+          in_circle[[1]] <-
+            sort( setdiff(in_circle[[1]], all_thetas$id[1]) )
         }
+
+        # for the rest of the rows, simply add the theta_in dots and remove
+        # the theta_out ones
+        for(j in 2:nrow(all_thetas)) {
+          if(all_thetas$in_[j]) {
+            in_circle[[j]] <-
+              sort( c(in_circle[[j-1]], all_thetas$id[j]) )
+          } else {
+            in_circle[[j]] <-
+              sort( setdiff(in_circle[[j-1]], all_thetas$id[j]) )
+          }
+        }
+
+        # assemble data frame from the in_circle indexes
+        origin <- setNames(unlist(point_data[point_data$id == i,][c(xcol, ycol)]), c("x", "y"))
+
+        matrix <- pol2cart(radius, all_thetas$theta, origin)
+
+        dimnames(matrix)[[2]] <- c(xcol, ycol)
+
+        circles <-
+          as.data.frame(matrix)
+
+        circles$in_circle <-
+          in_circle
+
+        circles$total <-
+          sapply(circles$in_circle, function(ids) {
+            sum(df[[weight]][df$id %in% ids])
+          })
+
       }
-
-      # assemble data frame from the in_circle indexes
-      origin <- setNames(unlist(point_data[point_data$id == i,][c(xcol, ycol)]), c("x", "y"))
-
-      matrix <- pol2cart(radius, all_thetas$theta, origin)
-
-      dimnames(matrix)[[2]] <- c(xcol, ycol)
-
-      circles <-
-        as.data.frame(matrix)
-
-      circles$in_circle <-
-        in_circle
-
-      circles$total <-
-        sapply(circles$in_circle, function(ids) {
-          sum(df[[weight]][df$id %in% ids])
-        })
 
       if(crs_transform) {
         circles <- change_projection(circles, xcol, ycol, utm_crs, 4326)
